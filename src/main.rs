@@ -4,41 +4,15 @@ use axum::{
     response::{IntoResponse, Response},
     routing::any_service,
 };
-use config::Configuration;
 use dav_server::{fakels::FakeLs, localfs::LocalFs, DavConfig, DavHandler, DavMethodSet};
 use headers::{authorization::Basic, Authorization, HeaderMapExt};
 use http::request::Request;
 use std::{net::SocketAddr, path::Path, str::FromStr, time::Instant};
 use tracing::{debug, error, info, instrument, trace};
 
-mod config {
-    use serde::Deserialize;
-    use std::{collections::HashMap, path::Path};
+mod config;
 
-    #[derive(Debug, Deserialize, Default, Clone)]
-    pub(crate) struct UserAccess {
-        #[serde(default)]
-        pub(crate) read: bool,
-        #[serde(default)]
-        pub(crate) write: bool,
-    }
-
-    type CollectionConfig = HashMap<String, UserAccess>;
-
-    #[derive(Debug, Deserialize, Clone)]
-    pub(crate) struct Configuration {
-        #[serde(default)]
-        pub(crate) users: HashMap<String, String>,
-        #[serde(default)]
-        pub(crate) collections: HashMap<String, CollectionConfig>,
-    }
-
-    pub(crate) fn load_config<P: AsRef<Path>>(path: P) -> Configuration {
-        let content = std::fs::read_to_string(path).expect("could not read config file");
-
-        toml::from_str(&content).expect("could not parse config file")
-    }
-}
+use config::Configuration;
 
 #[derive(Clone)]
 struct Server {
