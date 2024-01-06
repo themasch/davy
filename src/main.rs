@@ -1,25 +1,20 @@
 use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use axum::{
     body::Body,
+    extract::ConnectInfo,
     response::{IntoResponse, Response},
-    routing::any_service,
 };
 use dav_server::{fakels::FakeLs, localfs::LocalFs, DavConfig, DavHandler, DavMethodSet};
 use headers::{authorization::Basic, Authorization, HeaderMapExt};
 use http::request::Request;
-use std::{net::SocketAddr, path::Path, str::FromStr, time::Instant};
+use std::{net::SocketAddr, path::Path, str::FromStr};
 use tracing::{debug, error, info, instrument, trace};
 
+mod authentication;
 mod config;
 
+use authentication::AuthCache;
 use config::Configuration;
-
-#[derive(Clone)]
-struct Server {
-    dav_handler: DavHandler,
-    url_prefix: String,
-    config: Configuration,
-}
 
 impl From<config::UserAccess> for DavMethodSet {
     fn from(val: config::UserAccess) -> Self {
@@ -35,6 +30,18 @@ impl From<config::UserAccess> for DavMethodSet {
     }
 }
 
+#[derive(Clone)]
+struct Server {
+    dav_handler: DavHandler,
+    url_prefix: String,
+    config: Configuration,
+    auth_cache: AuthCache,
+}
+
+enum AuthParameters {
+    BasicAuth(String, String),
+}
+
 impl Server {
     fn create<P: Into<String>, S: AsRef<Path>>(prefix: P, dir: S, config: Configuration) -> Self {
         let url_prefix = prefix.into();
@@ -46,42 +53,63 @@ impl Server {
             .autoindex(true)
             .build_handler();
 
+        let auth_cache = AuthCache::new();
+
+        auth_cache.start_eviction_process();
+
         Self {
             url_prefix,
             dav_handler,
             config,
+            auth_cache,
         }
     }
 
-    #[instrument(skip(self, req))]
-    fn authenticate<B>(&self, req: &Request<B>) -> Result<String, ()> {
+    fn extract_auth_data<B>(req: &Request<B>) -> Result<AuthParameters, ()> {
         let basic_auth_header = req
             .headers()
             .typed_get::<Authorization<Basic>>()
             .ok_or(())?;
 
         let username = basic_auth_header.username();
+        let password = basic_auth_header.password();
 
-        //FIXME: obvious timing attack: non-existing user fails faster than incorrect password
-        let Some(user_pw_hash) = self.config.users.get(username) else {
+        Ok(AuthParameters::BasicAuth(
+            username.to_string(),
+            password.to_string(),
+        ))
+    }
+
+    async fn authenticate(&self, param: AuthParameters, addr: SocketAddr) -> Result<String, ()> {
+        let AuthParameters::BasicAuth(username, password) = param;
+
+        //FIXME: obvious timing attack: non-existing userfails faster than incorrect password
+        let Some(user_pw_hash) = self.config.users.get(&username) else {
             return Err(());
         };
 
-        let time = Instant::now();
-        let auth_success = Self::verify_password(basic_auth_header.password(), user_pw_hash);
-        let duration = time.elapsed();
+        if self
+            .auth_cache
+            .contains(user_pw_hash, &password, &addr.ip().to_string())
+            .await
+        {
+            return Ok(username);
+        }
 
-        trace!("verify_password took {}ms", duration.as_millis());
+        let auth_success = self.verify_password(&password, user_pw_hash);
 
         if auth_success {
-            Ok(username.to_string())
+            self.auth_cache
+                .insert(user_pw_hash, &password, &addr.ip().to_string())
+                .await;
+            Ok(username)
         } else {
             Err(())
         }
     }
 
-    #[instrument]
-    fn verify_password(given_password: &str, expected_hash: &str) -> bool {
+    #[instrument(skip_all)]
+    fn verify_password(&self, given_password: &str, expected_hash: &str) -> bool {
         let hash = match PasswordHash::new(expected_hash) {
             Ok(h) => h,
             Err(err) => {
@@ -95,7 +123,11 @@ impl Server {
             .is_ok()
     }
 
-    async fn req_handler(&self, req: Request<axum::body::Body>) -> impl IntoResponse {
+    async fn req_handler(
+        &self,
+        req: Request<axum::body::Body>,
+        addr: SocketAddr,
+    ) -> impl IntoResponse {
         let uri = req.uri().path();
 
         let Some(path) = uri.strip_prefix(&self.url_prefix) else {
@@ -107,7 +139,16 @@ impl Server {
         };
 
         debug!("checking auth...");
-        let Ok(username) = self.authenticate(&req) else {
+        let Ok(auth_data) = Self::extract_auth_data(&req) else {
+            error!("no authentication data provided?");
+            return Response::builder()
+                .status(401)
+                .header("WWW-Authenticate", "Basic realm=\"webdav\"")
+                .body(Body::from("authenticate".to_string()))
+                .unwrap();
+        };
+
+        let Ok(username) = self.authenticate(auth_data, addr).await else {
             return Response::builder()
                 .status(401)
                 .header("WWW-Authenticate", "Basic realm=\"webdav\"")
@@ -143,6 +184,8 @@ impl Server {
             .await
             .into_parts();
 
+        trace!("response: {}", res_parts.status);
+
         // we need to(?) repack the returned body into an axum body to please the type checkers
         // this should cause not a lot of copy, since we just add another wrapper around the stream
         let res_body = Body::from_stream(res_body);
@@ -165,20 +208,23 @@ async fn main() {
     let addr: SocketAddr = SocketAddr::from_str("127.0.0.1:4918").unwrap();
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
 
-    let server = Server::create("/dav/", dir, config);
+    let server = Server::create("/", dir, config);
 
     info!("starting server!");
-    let router = axum::Router::new().route(
-        "/dav/*segments",
-        any_service(tower::service_fn(move |req: Request<axum::body::Body>| {
+
+    let router = axum::Router::new().fallback(
+        move |ConnectInfo(addr): ConnectInfo<SocketAddr>, req: Request<axum::body::Body>| {
             let srv = server.clone();
             async move {
                 info!("got a request: {:?}", req);
-                let result = srv.req_handler(req).await;
-                Ok(result)
+                srv.req_handler(req, addr).await
             }
-        })),
+        },
     );
+
+    let router = axum::Router::new()
+        .nest("/dav", router)
+        .into_make_service_with_connect_info::<SocketAddr>();
 
     axum::serve(listener, router).await.unwrap();
 }

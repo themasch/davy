@@ -8,14 +8,16 @@ edition = "2021"
 [dependencies]
 argon2 = { version = "0.5.2", features = ["std"] }
 axum = { version = "0.7.3", features = ["tracing", "multipart"] }
-dav-server = { path = "../../dav-server-rs", features = ["hyper"] }
+#dav-server = { path = "../../dav-server-rs", features = ["hyper"] }
+dav-server = { git = "https://github.com/themasch/dav-server-rs.git", branch = "feature/http-1.0", features = ["hyper"] }
 headers = "0.4.0"
 http = "1.0.0"
 http-body = "1.0.0"
 rpassword = "7.3.1"
+secrecy = { version = "0.8.0" }
 serde = { version = "1.0.193", features = ["derive"] }
+sha2 = "0.10.8"
 tokio = { version = "1.35.1", features = ["rt-multi-thread", "net", "tracing", "macros", "sync"] }
 toml = "0.8.8"
-tower = "0.4.13"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "tracing"] }
