@@ -29,7 +29,6 @@ impl From<UserAccess> for DavMethodSet {
 #[derive(Clone)]
 pub(crate) struct Server {
     dav_handler: DavHandler,
-    url_prefix: String,
     config: Configuration,
     auth_cache: AuthCache,
 }
@@ -39,17 +38,10 @@ enum AuthParameters {
 }
 
 impl Server {
-    pub(crate) fn create<P: Into<String>, S: AsRef<Path>>(
-        prefix: P,
-        dir: S,
-        config: Configuration,
-    ) -> Self {
-        let url_prefix = prefix.into();
-
+    pub(crate) fn create<S: AsRef<Path>>(dir: S, config: Configuration) -> Self {
         let dav_handler = DavHandler::builder()
             .filesystem(LocalFs::new(dir, true, false, false))
             .locksystem(FakeLs::new())
-            .strip_prefix(&url_prefix)
             .autoindex(true)
             .build_handler();
 
@@ -58,7 +50,6 @@ impl Server {
         auth_cache.start_eviction_process();
 
         Self {
-            url_prefix,
             dav_handler,
             config,
             auth_cache,
@@ -128,15 +119,7 @@ impl Server {
         req: Request<axum::body::Body>,
         addr: SocketAddr,
     ) -> impl IntoResponse {
-        let uri = req.uri().path();
-
-        let Some(path) = uri.strip_prefix(&self.url_prefix) else {
-            info!("uri does not start with prefix, not a dav request?");
-            return Response::builder()
-                .status(404)
-                .body(Body::from("not found".to_string()))
-                .unwrap();
-        };
+        let path = req.uri().path();
 
         debug!("checking auth...");
         let Ok(auth_data) = Self::extract_auth_data(&req) else {

@@ -11,8 +11,15 @@ pub(crate) struct UserAccess {
 
 type CollectionConfig = HashMap<String, UserAccess>;
 
+#[derive(Debug, Deserialize, Default, Clone)]
+pub(crate) struct GlobalConfig {
+    pub(crate) url_prefix: String,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct Configuration {
+    #[serde(default)]
+    pub(crate) global: GlobalConfig,
     #[serde(default)]
     pub(crate) users: HashMap<String, String>,
     #[serde(default)]

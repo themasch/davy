@@ -4,7 +4,7 @@ use argon2::{
 };
 use rpassword::prompt_password;
 
-fn main() {
+pub(crate) async fn encrypt_password() {
     let pw = prompt_password("enter password to hash: ").expect("could not read pw");
     let salt = SaltString::generate(&mut OsRng);
 
