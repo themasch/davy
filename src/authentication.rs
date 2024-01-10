@@ -1,12 +1,10 @@
+use secrecy::{ExposeSecret, Secret};
+use sha2::{Digest, Sha256};
 use std::{
     sync::Arc,
     time::{Duration, SystemTime},
 };
-
 use tokio::sync::Mutex;
-
-use secrecy::{ExposeSecret, Secret};
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone)]
 struct AuthCacheKey(Secret<[u8; 32]>);
