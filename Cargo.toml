@@ -12,7 +12,7 @@ tools = ["dep:rpassword"]
 
 [dependencies]
 argon2 = { version = "0.5.2", features = ["std"] }
-axum = { version = "0.7.3", features = ["tracing", "multipart"] }
+axum = { version = "0.8.0", features = ["tracing", "multipart"] }
 clap = { version = "4.4.14", features = ["derive", "env"] }
 dav-server = { version = "0.10.0", features = ["hyper"] }
 headers = "0.4.0"
