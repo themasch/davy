@@ -23,6 +23,6 @@ secrecy = { version = "0.10.0" }
 serde = { version = "1.0.193", features = ["derive"] }
 sha2 = "0.10.8"
 tokio = { version = "1.35.1", features = ["rt-multi-thread", "net", "tracing", "macros", "sync"] }
-toml = "0.8.8"
+toml = "0.9.0"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter", "tracing"] }
