@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, Secret};
+use secrecy::{ExposeSecret, SecretBox};
 use sha2::{Digest, Sha256};
 use std::{
     sync::Arc,
@@ -6,8 +6,8 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-#[derive(Debug, Clone)]
-struct AuthCacheKey(Secret<[u8; 32]>);
+#[derive(Debug)]
+struct AuthCacheKey(SecretBox<[u8; 32]>);
 
 impl PartialEq for AuthCacheKey {
     fn eq(&self, other: &Self) -> bool {
@@ -17,7 +17,7 @@ impl PartialEq for AuthCacheKey {
 
 impl From<[u8; 32]> for AuthCacheKey {
     fn from(value: [u8; 32]) -> Self {
-        Self(Secret::new(value))
+        Self(SecretBox::new(Box::new(value)))
     }
 }
 
