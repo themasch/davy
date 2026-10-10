@@ -27,12 +27,14 @@ pub(crate) async fn start_server(cfg: Configuration, server_cfg: ServerConfig) {
 
     info!("starting server!");
 
+    use axum::extract::OriginalUri;
     let router = axum::Router::new().fallback(
-        move |ConnectInfo(addr): ConnectInfo<SocketAddr>, req: Request<axum::body::Body>| {
+        move |ConnectInfo(addr): ConnectInfo<SocketAddr>,
+              OriginalUri(full_uri): axum::extract::OriginalUri,
+              req: Request<axum::body::Body>| {
             let srv = server.clone();
             async move {
-                info!("got a request: {:?}", req);
-                srv.req_handler(req, addr).await
+                srv.req_handler(req, full_uri, addr).await
             }
         },
     );

@@ -6,6 +6,7 @@ use axum::{
 use dav_server::{fakels::FakeLs, localfs::LocalFs, DavConfig, DavHandler, DavMethodSet};
 use headers::{authorization::Basic, Authorization, HeaderMapExt};
 use http::request::Request;
+use http::uri::Uri;
 use std::{net::SocketAddr, path::Path};
 use tracing::{debug, error, info, instrument, trace};
 
@@ -117,9 +118,12 @@ impl Server {
     pub(crate) async fn req_handler(
         &self,
         req: Request<axum::body::Body>,
+        full_uri: http::uri::Uri,
         addr: SocketAddr,
     ) -> impl IntoResponse {
         let path = req.uri().path();
+
+        debug!("incoming request on {:?} ({path})", full_uri);
 
         debug!("checking auth...");
         let Ok(auth_data) = Self::extract_auth_data(&req) else {
@@ -157,9 +161,13 @@ impl Server {
                 .unwrap();
         };
 
+        // we need to give the handler the full url, since it needs to generate valid links
+        let req = Self::reconstruct_request(req, full_uri);
+
         // not sure if this is actually a sane way to do authorization, but it might just work...
         let user_access = cfg.get(&username).cloned().unwrap_or_default();
         let cfg_builder = cfg_builder.methods(user_access.into());
+        let cfg_builder = cfg_builder.strip_prefix(&self.config.global.url_prefix);
 
         let (res_parts, res_body) = self
             .dav_handler
@@ -173,5 +181,11 @@ impl Server {
         // this should cause not a lot of copy, since we just add another wrapper around the stream
         let res_body = Body::from_stream(res_body);
         Response::from_parts(res_parts, res_body)
+    }
+
+    fn reconstruct_request<T>(req: Request<T>, original_uri: Uri) -> Request<T> {
+        let (mut parts, body) = req.into_parts();
+        parts.uri = original_uri;
+        Request::from_parts(parts, body)
     }
 }
