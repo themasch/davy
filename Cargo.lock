@@ -355,9 +355,8 @@ dependencies = [
 
 [[package]]
 name = "dav-server"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88e9e4e7a3546a5b348518694e9f3ed5cf3fc8856e50141c197f54d79b5714a8"
+version = "0.12.0"
+source = "git+https://github.com/themasch/dav-server-rs.git?branch=fix-client-namespace-prefix-leak#34b9f49f6179700c74adc0542534d3c963c2467d"
 dependencies = [
  "bytes",
  "chrono",
